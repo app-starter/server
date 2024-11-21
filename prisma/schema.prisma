@@ -1,0 +1,140 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                Int            @id @default(autoincrement())
+  email             String         @unique
+  password          String?
+  name              String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  verified          Boolean        @default(false)
+  verificationToken String?
+  stripeCustomerId  String?
+  roles             UserRole[]
+  subscription      Subscription[]
+  googleId          String?
+  resetToken       String?
+  resetTokenExpiry DateTime?
+  googleId     String?   @unique
+  appleId      String?   @unique
+}
+
+model Role {
+  id          Int              @id @default(autoincrement())
+  name        String           @unique
+  isDefault   Boolean          @default(false)
+  permissions RolePermission[]
+  users       UserRole[]
+  planRole    PlanRole[]
+}
+
+model Permission {
+  id    Int              @id @default(autoincrement())
+  name  String           @unique
+  roles RolePermission[]
+}
+
+model UserRole {
+  userId Int
+  roleId Int
+  user   User @relation(fields: [userId], references: [id])
+  role   Role @relation(fields: [roleId], references: [id])
+
+  @@id([userId, roleId])
+}
+
+model RolePermission {
+  roleId       Int
+  permissionId Int
+  role         Role       @relation(fields: [roleId], references: [id])
+  permission   Permission @relation(fields: [permissionId], references: [id])
+
+  @@id([roleId, permissionId])
+}
+
+model Setting {
+  id    Int    @id @default(autoincrement())
+  key   String @unique
+  value String
+}
+
+model Plan {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String
+  price       Float
+  planPriceId String?
+  interval    Interval
+  isActive    Boolean  @default(true)
+  planRole     PlanRole[]
+  subscription Subscription[]
+
+  features    Feature[]
+}
+
+model PlanRole {
+  roleId Int
+  planId Int
+  plan   Plan @relation(fields: [planId], references: [id])
+  role   Role @relation(fields: [roleId], references: [id])
+
+  @@id([roleId, planId])
+}
+
+enum Interval {
+  MONTHLY
+  YEARLY
+}
+
+model Subscription {
+  id     Int                @id @default(autoincrement())
+  userId Int
+  user   User               @relation(fields: [userId], references: [id])
+  planId Int
+  plan   Plan               @relation(fields: [planId], references: [id])
+  status SubscriptionStatus
+
+  subscriptionId String
+
+  startDate DateTime
+  endDate   DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  EXPIRED
+}
+
+model Feature {
+  id      Int    @id @default(autoincrement())
+  name    String
+  icon    String
+  planId  Int
+  plan    Plan   @relation(fields: [planId], references: [id])
+}
+model WaitingList {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  createdAt DateTime @default(now())
+}
+model EmailTemplate {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  subject   String
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
