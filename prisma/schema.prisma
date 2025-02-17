@@ -23,10 +23,8 @@ model User {
   roles             UserRole[]
   subscription      Subscription[]
   googleId          String?
-  resetToken       String?
-  resetTokenExpiry DateTime?
-  googleId     String?   @unique
-  appleId      String?   @unique
+  resetToken        String?
+  resetTokenExpiry  DateTime?
 }
 
 model Role {
@@ -69,17 +67,17 @@ model Setting {
 }
 
 model Plan {
-  id          Int      @id @default(autoincrement())
-  name        String
-  description String
-  price       Float
-  planPriceId String?
-  interval    Interval
-  isActive    Boolean  @default(true)
+  id           Int            @id @default(autoincrement())
+  name         String
+  description  String
+  price        Float
+  planPriceId  String?
+  interval     Interval
+  isActive     Boolean        @default(true)
   planRole     PlanRole[]
   subscription Subscription[]
 
-  features    Feature[]
+  features Feature[]
 }
 
 model PlanRole {
@@ -119,17 +117,19 @@ enum SubscriptionStatus {
 }
 
 model Feature {
-  id      Int    @id @default(autoincrement())
-  name    String
-  icon    String
-  planId  Int
-  plan    Plan   @relation(fields: [planId], references: [id])
+  id     Int    @id @default(autoincrement())
+  name   String
+  icon   String
+  planId Int
+  plan   Plan   @relation(fields: [planId], references: [id])
 }
+
 model WaitingList {
   id        Int      @id @default(autoincrement())
   email     String   @unique
   createdAt DateTime @default(now())
 }
+
 model EmailTemplate {
   id        Int      @id @default(autoincrement())
   name      String   @unique
