@@ -73,6 +73,8 @@ module.exports.webhook = async (req, res) => {
           status: "ACTIVE",
           startDate: new Date(session.created * 1000),
           endDate: new Date(session.expires_at * 1000),
+          purchasePlatform: "web", // Mark as web purchase via Stripe
+          store: "WEB",
           user: {
             connect: {
               id: parseInt(userId),

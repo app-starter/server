@@ -10,6 +10,13 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  BANNED
+}
+
 model User {
   id                Int            @id @default(autoincrement())
   email             String         @unique
@@ -25,6 +32,29 @@ model User {
   googleId          String?
   resetToken        String?
   resetTokenExpiry  DateTime?
+  status            UserStatus     @default(ACTIVE)
+  lastLoginAt       DateTime?
+  lastLoginIp       String?
+  lastLoginPlatform String?
+  preferredLanguage String?        @default("en")
+  timezone          String?
+
+  // Notification Preferences
+  notificationPushEnabled  Boolean? @default(true)
+  notificationEmailEnabled Boolean? @default(true)
+  notificationSmsEnabled   Boolean? @default(false)
+  notificationMarketing    Boolean? @default(true)
+  notificationUpdates      Boolean? @default(true)
+  notificationReminders    Boolean? @default(true)
+
+  // App Preferences
+  themeMode String? @default("system") // "light", "dark", "system"
+
+  auditLogs     AuditLog[]
+  emailLogs     EmailLog[]
+  transactions  Transaction[]
+  notifications Notification[]
+  devices       UserDevice[]
 }
 
 model Role {
@@ -67,15 +97,16 @@ model Setting {
 }
 
 model Plan {
-  id           Int            @id @default(autoincrement())
-  name         String
-  description  String
-  price        Float
-  planPriceId  String?
-  interval     Interval
-  isActive     Boolean        @default(true)
-  planRole     PlanRole[]
-  subscription Subscription[]
+  id                  Int            @id @default(autoincrement())
+  name                String
+  description         String
+  price               Float
+  planPriceId         String? // Stripe Price ID (for web)
+  revenueCatProductId String? // RevenueCat Product ID (for mobile)
+  interval            Interval
+  isActive            Boolean        @default(true)
+  planRole            PlanRole[]
+  subscription        Subscription[]
 
   features Feature[]
 }
@@ -95,19 +126,30 @@ enum Interval {
 }
 
 model Subscription {
-  id     Int                @id @default(autoincrement())
-  userId Int
-  user   User               @relation(fields: [userId], references: [id])
-  planId Int
-  plan   Plan               @relation(fields: [planId], references: [id])
-  status SubscriptionStatus
+  id               Int                @id @default(autoincrement())
+  userId           Int
+  user             User               @relation(fields: [userId], references: [id])
+  planId           Int
+  plan             Plan               @relation(fields: [planId], references: [id])
+  status           SubscriptionStatus
+  subscriptionId   String
+  startDate        DateTime
+  endDate          DateTime
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  cancelReason     String?
+  canceledAt       DateTime?
+  nextBillingDate  DateTime?
+  previousPlanId   Int?
+  purchasePlatform String?            @default("web")
 
-  subscriptionId String
+  // RevenueCat Integration
+  revenueCatProductId   String?
+  revenueCatCustomerId  String?
+  revenueCatEntitlement String?
+  store                 String? // APP_STORE, PLAY_STORE, WEB
 
-  startDate DateTime
-  endDate   DateTime
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  transactions Transaction[]
 }
 
 enum SubscriptionStatus {
@@ -127,6 +169,7 @@ model Feature {
 model WaitingList {
   id        Int      @id @default(autoincrement())
   email     String   @unique
+  name      String?
   createdAt DateTime @default(now())
 }
 
@@ -137,4 +180,227 @@ model EmailTemplate {
   content   String   @db.Text
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// Audit Log for tracking admin and user actions
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  userId     Int?
+  user       User?    @relation(fields: [userId], references: [id])
+  action     String
+  entityType String
+  entityId   Int?
+  ipAddress  String?
+  userAgent  String?
+  platform   String?  @default("web")
+  metadata   String?  @db.Text
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([entityType])
+  @@index([createdAt])
+}
+
+// Email Log for tracking sent emails
+model EmailLog {
+  id           Int      @id @default(autoincrement())
+  userId       Int?
+  user         User?    @relation(fields: [userId], references: [id])
+  templateName String
+  to           String
+  subject      String
+  status       String // sent, failed, bounced
+  errorMessage String?
+  sentAt       DateTime @default(now())
+
+  @@index([userId])
+  @@index([status])
+  @@index([sentAt])
+}
+
+// Transaction for detailed payment tracking
+model Transaction {
+  id              Int           @id @default(autoincrement())
+  userId          Int
+  user            User          @relation(fields: [userId], references: [id])
+  subscriptionId  Int?
+  subscription    Subscription? @relation(fields: [subscriptionId], references: [id])
+  amount          Float
+  currency        String        @default("usd")
+  status          String // succeeded, failed, refunded
+  stripePaymentId String?
+  stripeRefundId  String?
+  platform        String?       @default("web")
+  metadata        String?       @db.Text
+  createdAt       DateTime      @default(now())
+
+  @@index([userId])
+  @@index([subscriptionId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// Notification for admin and user notifications
+model Notification {
+  id             Int      @id @default(autoincrement())
+  userId         Int?
+  user           User?    @relation(fields: [userId], references: [id])
+  type           String // info, warning, error, success
+  title          String
+  message        String   @db.Text
+  isRead         Boolean  @default(false)
+  targetPlatform String   @default("all") // web, mobile, all
+  metadata       String?  @db.Text
+  createdAt      DateTime @default(now())
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+}
+
+// User Device for mobile device management
+model UserDevice {
+  id           Int        @id @default(autoincrement())
+  userId       Int
+  user         User       @relation(fields: [userId], references: [id])
+  deviceId     String     @unique
+  deviceName   String?
+  platform     String // ios, android
+  deviceModel  String?
+  osVersion    String?
+  appVersion   String?
+  fcmToken     String?
+  isActive     Boolean    @default(true)
+  lastActiveAt DateTime?
+  lastUsedAt   DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  ban          DeviceBan?
+
+  @@index([userId])
+  @@index([deviceId])
+  @@index([isActive])
+}
+
+// Push Notification history
+model PushNotification {
+  id          Int       @id @default(autoincrement())
+  title       String
+  body        String    @db.Text
+  data        String?   @db.Text
+  targetType  String // all, user, segment
+  targetIds   String?   @db.Text
+  sentTo      Int       @default(0)
+  deliveredTo Int       @default(0)
+  openedBy    Int       @default(0)
+  scheduledAt DateTime?
+  sentAt      DateTime?
+  status      String // scheduled, sent, failed
+  platform    String? // ios, android, all
+  createdBy   Int?
+  createdAt   DateTime  @default(now())
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+// App Version management
+model AppVersion {
+  id                  Int      @id @default(autoincrement())
+  version             String
+  buildNumber         String
+  platform            String // ios, android
+  minSupportedVersion String?
+  isForceUpdate       Boolean  @default(false)
+  releaseNotes        String?  @db.Text
+  releaseDate         DateTime
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([platform])
+  @@index([isActive])
+}
+
+// Feature Flag for feature toggles
+model FeatureFlag {
+  id                Int      @id @default(autoincrement())
+  name              String
+  key               String   @unique
+  description       String?  @db.Text
+  isEnabled         Boolean  @default(false)
+  targetPlatform    String   @default("all") // web, mobile, all
+  rolloutPercentage Int      @default(100)
+  enabledForUserIds String?  @db.Text
+  metadata          String?  @db.Text
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([key])
+  @@index([isEnabled])
+}
+
+// Remote Config for app configuration
+model RemoteConfig {
+  id          Int      @id @default(autoincrement())
+  key         String   @unique
+  value       String   @db.Text
+  valueType   String   @default("string") // string, number, boolean, json
+  platform    String   @default("all") // web, mobile, all
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([key])
+  @@index([platform])
+}
+
+// App Announcement for in-app announcements
+model AppAnnouncement {
+  id                Int       @id @default(autoincrement())
+  title             String
+  content           String    @db.Text
+  targetPlatform    String    @default("all") // web, mobile, all
+  startDate         DateTime
+  endDate           DateTime?
+  priority          String    @default("normal") // low, normal, high
+  isActive          Boolean   @default(true)
+  targetUserSegment String?   @db.Text
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([isActive])
+  @@index([startDate])
+  @@index([endDate])
+}
+
+// Device Ban for banned devices
+model DeviceBan {
+  id        Int        @id @default(autoincrement())
+  deviceId  Int        @unique
+  device    UserDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  reason    String
+  bannedBy  Int
+  bannedAt  DateTime   @default(now())
+  expiresAt DateTime?
+
+  @@index([deviceId])
+  @@index([expiresAt])
+}
+
+// Mobile Analytics for mobile app metrics
+model MobileAnalytics {
+  id                 Int      @id @default(autoincrement())
+  date               DateTime @unique
+  platform           String // ios, android, all
+  dau                Int      @default(0)
+  mau                Int      @default(0)
+  sessionCount       Int      @default(0)
+  avgSessionDuration Float    @default(0)
+  crashCount         Int      @default(0)
+  updatedAt          DateTime @updatedAt
+
+  @@index([date])
+  @@index([platform])
 }

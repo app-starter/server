@@ -6,7 +6,7 @@ const { sendEmail } = require("./email");
 const prisma = new PrismaClient();
 
 exports.login = async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, deviceInfo } = req.body;
 
   if (!email || !password) {
     return res.status(400).json({ message: "Email ve şifre boş olamaz" });
@@ -22,6 +22,51 @@ exports.login = async (req, res) => {
     const isValidPassword = await bcrypt.compare(password, user.password);
     if (!isValidPassword) {
       return res.status(401).json({ message: "Geçersiz email veya şifre" });
+    }
+
+    // Update user's last login info
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        lastLoginAt: new Date(),
+        lastLoginIp: req.ip,
+        lastLoginPlatform: deviceInfo?.platform || 'unknown',
+      },
+    });
+
+    // Register or update device if deviceInfo is provided
+    if (deviceInfo && deviceInfo.deviceId) {
+      try {
+        await prisma.userDevice.upsert({
+          where: { deviceId: deviceInfo.deviceId },
+          update: {
+            deviceName: deviceInfo.deviceName,
+            deviceModel: deviceInfo.deviceModel,
+            osVersion: deviceInfo.osVersion,
+            appVersion: deviceInfo.appVersion,
+            fcmToken: deviceInfo.fcmToken,
+            lastActiveAt: new Date(),
+            lastUsedAt: new Date(),
+            isActive: true,
+          },
+          create: {
+            userId: user.id,
+            deviceId: deviceInfo.deviceId,
+            deviceName: deviceInfo.deviceName,
+            platform: deviceInfo.platform,
+            deviceModel: deviceInfo.deviceModel,
+            osVersion: deviceInfo.osVersion,
+            appVersion: deviceInfo.appVersion,
+            fcmToken: deviceInfo.fcmToken,
+            lastActiveAt: new Date(),
+            lastUsedAt: new Date(),
+          },
+        });
+        console.log('Device registered/updated:', deviceInfo.deviceId);
+      } catch (deviceError) {
+        console.error('Error registering device:', deviceError);
+        // Don't fail login if device registration fails
+      }
     }
 
     const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, {
@@ -43,7 +88,7 @@ exports.login = async (req, res) => {
 };
 
 exports.register = async (req, res) => {
-  const { email, password, name } = req.body;
+  const { email, password, name, deviceInfo } = req.body;
 
   if (!email || !password || !name) {
     return res.status(400).json({ message: "Email, isim ve şifre boş olamaz" });
@@ -65,6 +110,9 @@ exports.register = async (req, res) => {
         email,
         name,
         password: hashedPassword,
+        lastLoginAt: new Date(),
+        lastLoginIp: req.ip,
+        lastLoginPlatform: deviceInfo?.platform || 'unknown',
         roles: {
           create: {
             role: {
@@ -76,6 +124,30 @@ exports.register = async (req, res) => {
         },
       },
     });
+
+    // Register device if deviceInfo is provided
+    if (deviceInfo && deviceInfo.deviceId) {
+      try {
+        await prisma.userDevice.create({
+          data: {
+            userId: user.id,
+            deviceId: deviceInfo.deviceId,
+            deviceName: deviceInfo.deviceName,
+            platform: deviceInfo.platform,
+            deviceModel: deviceInfo.deviceModel,
+            osVersion: deviceInfo.osVersion,
+            appVersion: deviceInfo.appVersion,
+            fcmToken: deviceInfo.fcmToken,
+            lastActiveAt: new Date(),
+            lastUsedAt: new Date(),
+          },
+        });
+        console.log('Device registered during signup:', deviceInfo.deviceId);
+      } catch (deviceError) {
+        console.error('Error registering device during signup:', deviceError);
+        // Don't fail registration if device registration fails
+      }
+    }
 
     // Kullanıcı oluşturulduktan sonra token oluştur
     const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, {
